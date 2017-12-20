@@ -5,7 +5,7 @@ set -o errexit
 if [ -d '.git' ]
 then
   echo Refreshing ctags...
-  ctags -R .
+  #ctags -R .
 fi
 
 echo Running $ITERATIVE_CMD

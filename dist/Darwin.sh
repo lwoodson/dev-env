@@ -1,12 +1,31 @@
 function setup() {
   # TODO install homebrew
   brew update
+
+  # Make mac terminal env more *nixlike
   install_or_upgrade "findutils"
   install_or_upgrade "gawk"
-  install_or_upgrade "gsed"
+  install_or_upgrade "gnu-sed"
+  install_or_upgrade "gnu-tar"
+  install_or_upgrade "mtr"
+  install_or_upgrade "watch"
+  install_or_upgrade "wget"
 
   rename "gawk" "awk"
   rename "gsed" "sed"
+  rename "gtar" "tar"
+}
+
+function install_openssl() {
+  install_or_upgrade "openssl"
+}
+
+function install_nmap() {
+  install_or_upgrade "nmap"
+}
+
+function install_pstree() {
+  install_or_upgrade "pstree"
 }
 
 function install_tmux() {
@@ -25,6 +44,14 @@ function install_vim() {
   git clone https://github.com/VundleVim/Vundle.vim.git ~/.vim/bundle/Vundle.vim
 }
 
+function install_fswatch() {
+  install_or_upgrade "fswatch"
+}
+
+function install_jq() {
+  install_or_upgrade "jq"
+}
+
 function install_docker() {
   # See
   # - https://docs.docker.com/docker-for-mac/install/#download-docker-for-mac
@@ -36,8 +63,30 @@ function install_docker() {
   rm Docker.dmg
 }
 
+function install_node() {
+  install_or_upgrade "node"
+}
+
+function install_shell_linter() {
+  install_or_upgrade "shellcheck"
+}
+
+function install_html_linter() {
+  install_or_upgrade "tidy-html5"
+}
+
 function install_ctags() {
-  install_or_upgrade "ctags"
+  install_or_upgrade "ctags-exuberant"
+}
+
+function install_gdb() {
+  install_or_upgrade "gdb"
+}
+
+function create_user() {
+  local user="${1}"
+
+  echo "Creating ${user}"
 }
 
 function final_instructions() {
@@ -63,5 +112,6 @@ function rename() {
   local new_command="${2}"
   local abs_new_command="/usr/local/bin/${new_command}"
 
+  rm -f "${abs_new_command}"
   ln -s $(which "${command}") "${abs_new_command}"
 }

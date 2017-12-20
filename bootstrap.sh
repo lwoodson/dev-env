@@ -53,6 +53,9 @@ function install_httpie() {
   pip install httpie
 }
 
+function install_aws_cli() {
+  pip install awscli --upgrade --user
+}
 
 function fetch_keys() {
   local user="${1}"
@@ -128,6 +131,7 @@ function main() {
   install_vim
   install_mdv
   install_httpie
+  install_aws_cli
   # netstat?
   # nslookup?
 

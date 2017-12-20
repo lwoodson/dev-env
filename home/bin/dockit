@@ -1,0 +1,256 @@
+#!/bin/bash
+set -o nounset
+set -o errexit
+shopt -s expand_aliases
+
+function error() {
+  echo 1>&2 "ERROR: $@"
+}
+
+function init_action() {
+  local dockit_root=".dockit"
+  local init_file="${dockit_root}/.init"
+
+  echo "Initializing Dockerized..."
+  mkdir -p "${dockit_root}"
+  touch "${dockit_root}/.init"
+  touch "${dockit_root}/.aliases"
+
+  local to_remove=$(find .dockit -maxdepth 1 -type d |
+                    tail -n +2                           |
+                    tr '\n' ' ')
+
+  for removal_target in ${to_remove}; do
+    echo "Removing ${removal_target}"
+    rm -rf "${removal_target}"
+    #  TODO remove volumes
+  done
+
+  if [[ -e "${init_file}" ]]; then
+    echo "Replaying commands in ${init_file}..."
+    source "${init_file}"
+  fi
+
+  echo "Done."
+}
+
+function activate_action() {
+  local dockit_root=".dockit"
+  local alias_file="./${dockit_root}/.aliases"
+
+  bash -i "${alias_file}"
+  echo "Done."
+}
+
+function env_usage() {
+  cat <<EOF
+Usage: ${0#./} env [OPTIONS...]
+
+Set up an executable proxy to execute the specified
+command within a docker container
+
+
+Options:
+
+  --name <env-name>
+    The name of the env to set up
+
+  --image <image-name>
+    The image used for the environment
+
+  -h/--help
+    Display this help message
+EOF
+}
+
+function command_action() {
+  local pwd=$(pwd)
+  local env=""
+  local command=""
+  local store_command="true"
+  local original_args="${@}"
+
+  while [[ ${#} -gt 0 ]]; do
+    case "${1}" in
+      --env)              env="${2}"; shift;;
+      --command)          command="${2}"; shift;;
+      --store-command)    store_command="${2}"; shift;;
+      -h|--help)          command_usage; exit 0;;
+      --)                 break;;
+      -*)                 error "Unrecognized option ${1}";;
+    esac
+
+    shift
+  done
+
+  if [[ -z "${env}" ]]; then
+    error "You must specify an --env"
+    echo
+    command_usage
+    exit 1
+  fi
+
+  if [[ -z "${command}" ]]; then
+    error "You must specify a --command"
+    echo
+    command_usage
+    exit 1
+  fi
+
+  echo "Creating alias for '${command}' to run '${env}-env ${command}'..."
+  local command="alias ${command}=\"${pwd}/.dockit/${env}/bin/${env}-env ${command}\""
+  echo "${command}" >> ".dockit/.aliases"
+  source ".dockit/.aliases"
+  echo "Done."
+
+  if [[ "${store_command}" = "true" ]]; then
+    store_for_init "command" "$original_args"
+  fi
+}
+
+function env_action() {
+  local env_name=""
+  local image=""
+  local store_command="true"
+  local original_args="${@}"
+
+  while [[ ${#} -gt 0 ]]; do
+    case "${1}" in
+      --name)             env_name="${2}"; shift;;
+      --image)            image="${2}"; shift;;
+      --store-command)    store_command="${2}"; shift;;
+      -h|--help)          env_usage; exit 0;;
+      --)                 break;;
+      -*)                 error "Unrecognized option ${1}";;
+    esac
+
+    shift
+  done
+
+  if [[ -z "${env_name}" ]]; then
+    error "You must specify a --name"
+    echo
+    env_usage
+    exit 1
+  fi
+
+  if [[ -z "${image}" ]]; then
+    error "You must specify an --image"
+    echo
+    env_usage
+    exit 1
+  fi
+
+  echo "Setting up ${env_name}-env as a dockit environment to run commands in ${image}"
+
+  build_env_structure "${env_name}"
+  docker volume create $(volume_name "${env_name}")
+  build_env_command "${env_name}" "${image}"
+
+  if [[ "${store_command}" = "true" ]]; then
+    store_for_init "env" "$original_args"
+  fi
+
+  echo "Fin."
+}
+
+function env_root() {
+  local env="${1}"
+
+  echo ".dockit/${env}"
+}
+
+function env_path() {
+  local env="${1}"
+  local env_root=$(env_root "${env}")
+  local subpath="${2}"
+
+  echo "${env_root}/${subpath}"
+}
+
+function build_env_structure() {
+  local env="${1}"
+  local env_root=$(env_root "${env}")
+
+  mkdir -p $(env_path "${env}" "/bin")
+  mkdir -p $(env_path "${env}" "/usr/local")
+}
+
+function volume_name() {
+  local env="${1}"
+  local project_element=$(pwd | sed 's/\//-/g' | cut -c 2-1024)
+
+  echo "${project_element}_.dockit${env}"
+}
+
+function build_volume() {
+  local env="${1}"
+  local volume_name=$(volume_name "${env}")
+
+  docker volume create "${volume_name}"
+}
+
+function build_env_command() {
+  local env="${1}"
+  local command="${env}-env"
+  local image="${2}"
+  local volume_name=$(volume_name "${env}")
+  local location=$(env_path "${env}" "/bin/${command}")
+
+  echo "Building to ${location}"
+  cat > "${location}" <<- EOC
+#!/bin/bash
+set -o nounset
+set -o errexit
+
+pwd="\${PWD##*/}"
+project_root=\$(pwd)
+volume_name=\$(docker volume ls | grep "\${pwd}" | grep "${env}" | awk '{print \$2}')
+
+docker run --interactive                         \\
+           --tty                                 \\
+           --rm                                  \\
+           --volume "\${project_root}:/usr/src"   \\
+           --mount "source=${volume_name},target=/usr/local" \\
+           --workdir /usr/src                    \\
+           ${image} "\$@"
+EOC
+  chmod +x "${location}"
+}
+
+function store_for_init() {
+  local command="dockit $@ --store-command false"
+
+  echo "${command}" >> ".dockit/.init"
+}
+
+function usage() {
+  cat <<EOF
+Usage: ${0#./} [ACTION] [OPTIONS...]
+
+Actions:
+
+  init
+    Initialize a project to be dockit
+
+  env
+    Create an executable proxy that runs commands in a
+    container with persistent /usr/local volume
+
+  command
+    Create a command alias to be run within a dockit environment
+
+  activate
+    Activate all aliases so they are available to your terminal session
+EOF
+}
+
+function main() {
+  local action="${1}"
+  local action_fn="${action}_action"
+
+  shift
+  $action_fn "$@"
+}
+
+main "$@"

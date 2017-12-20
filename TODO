@@ -1,0 +1,10 @@
+* extract custom vim snippets to own repo
+  * Install to public S3 bucket
+  * Provide install instructions
+* fix home copy
+* extract dockit
+  * install to public S3 bucket
+  * Provide install instructions
+  * ensure docker installed
+  * fix unbound variable errors
+* Install to public S3 bucket & provide install instructions
